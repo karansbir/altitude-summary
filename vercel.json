@@ -10,17 +10,5 @@
       "path": "/api/altitude_summary",
       "schedule": "0 16 * * *"
     }
-  ],
-  "env": {
-    "GMAIL_CREDENTIALS_JSON": "@gmail_credentials_json",
-    "BREVO_API_KEY": "@brevo_api_key",
-    "TWILIO_ACCOUNT_SID": "@twilio_account_sid",
-    "TWILIO_AUTH_TOKEN": "@twilio_auth_token",
-    "TWILIO_WHATSAPP_NUMBER": "@twilio_whatsapp_number",
-    "FROM_EMAIL": "@from_email",
-    "FROM_NAME": "@from_name",
-    "RECIPIENT_EMAIL": "@recipient_email",
-    "RECIPIENT_PHONE": "@recipient_phone",
-    "ALTITUDE_LABEL": "@altitude_label"
-  }
+  ]
 }
