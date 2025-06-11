@@ -56,7 +56,7 @@ class GmailClient:
                     # In serverless environment, we should use pre-generated tokens
                     raise RuntimeError("In serverless environment, token must be pre-generated")
                 else:
-                    creds = flow.run_local_server(port=0)
+                    creds = flow.run_local_server(port=8080)
             
             # Save credentials for next run (not in serverless)
             if not (os.getenv('VERCEL') or os.getenv('AWS_LAMBDA_FUNCTION_NAME')):

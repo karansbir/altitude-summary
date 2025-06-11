@@ -54,3 +54,12 @@ logs/
 
 # AI
 claude.md
+
+# Static Assets
+*.jpg
+
+# Helper Scripts
+setup.sh
+
+# Test Files
+test_*.py

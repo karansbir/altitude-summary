@@ -13,9 +13,14 @@
   ],
   "env": {
     "GMAIL_CREDENTIALS_JSON": "@gmail_credentials_json",
-    "SMTP_USERNAME": "@smtp_username", 
-    "SMTP_PASSWORD": "@smtp_password",
+    "BREVO_API_KEY": "@brevo_api_key",
+    "TWILIO_ACCOUNT_SID": "@twilio_account_sid",
+    "TWILIO_AUTH_TOKEN": "@twilio_auth_token",
+    "TWILIO_PHONE_NUMBER": "@twilio_phone_number",
+    "FROM_EMAIL": "@from_email",
+    "FROM_NAME": "Altitude Summary",
     "RECIPIENT_EMAIL": "@recipient_email",
+    "RECIPIENT_PHONE": "@recipient_phone",
     "ALTITUDE_LABEL": "altitude"
   }
 }
