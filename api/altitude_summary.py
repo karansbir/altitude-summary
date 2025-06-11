@@ -17,9 +17,31 @@ from gmail_client import GmailClient
 from notification_service import NotificationService
 
 class handler(BaseHTTPRequestHandler):
+    def _check_cron_auth(self):
+        """Check if request is from Vercel cron system"""
+        # Vercel cron jobs include this header
+        cron_header = self.headers.get('x-vercel-cron-invoke') or self.headers.get('X-Vercel-Cron-Invoke')
+        if cron_header:
+            return True
+            
+        # Alternative: check for cron secret if set
+        cron_secret = os.getenv('CRON_SECRET')
+        if cron_secret:
+            cron_token = self.headers.get('X-Cron-Token') or self.headers.get('x-cron-token')
+            return cron_token == cron_secret
+            
+        return False
+    
     def do_GET(self):
         """Handle GET request for manual trigger"""
         try:
+            # Check cron authentication first
+            if not self._check_cron_auth():
+                self.send_response(401)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Unauthorized - Invalid or missing cron token'}).encode())
+                return
             # Parse query parameters
             query = self.path.split('?')[1] if '?' in self.path else ''
             params = dict(param.split('=') for param in query.split('&') if '=' in param)
@@ -44,6 +66,13 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle POST request with JSON payload"""
         try:
+            # Check cron authentication first
+            if not self._check_cron_auth():
+                self.send_response(401)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': 'Unauthorized - Invalid or missing cron token'}).encode())
+                return
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
