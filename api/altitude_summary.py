@@ -19,12 +19,12 @@ from notification_service import NotificationService
 class handler(BaseHTTPRequestHandler):
     def _check_cron_auth(self):
         """Check if request is from Vercel cron system"""
-        # Vercel cron jobs include this header
-        cron_header = self.headers.get('x-vercel-cron-invoke') or self.headers.get('X-Vercel-Cron-Invoke')
-        if cron_header:
+        # Vercel cron jobs always send this specific user agent
+        user_agent = self.headers.get('User-Agent', '')
+        if 'vercel-cron/1.0' in user_agent:
             return True
             
-        # Alternative: check for cron secret if set
+        # Alternative: check for cron secret if set (for manual testing)
         cron_secret = os.getenv('CRON_SECRET')
         if cron_secret:
             cron_token = self.headers.get('X-Cron-Token') or self.headers.get('x-cron-token')
