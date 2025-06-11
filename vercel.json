@@ -1,0 +1,21 @@
+{
+  "functions": {
+    "api/altitude_summary.py": {
+      "runtime": "python3.9",
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/altitude_summary",
+      "schedule": "0 16 * * *"
+    }
+  ],
+  "env": {
+    "GMAIL_CREDENTIALS_JSON": "@gmail_credentials_json",
+    "SMTP_USERNAME": "@smtp_username", 
+    "SMTP_PASSWORD": "@smtp_password",
+    "RECIPIENT_EMAIL": "@recipient_email",
+    "ALTITUDE_LABEL": "altitude"
+  }
+}
