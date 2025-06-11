@@ -1,8 +1,7 @@
 {
   "functions": {
-    "api/altitude_summary.py": {
-      "runtime": "python3.12",
-      "maxDuration": 30
+    "api/*.py": {
+      "runtime": "@vercel/python"
     }
   },
   "crons": [
