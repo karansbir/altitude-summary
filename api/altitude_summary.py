@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
+import pytz
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -47,7 +48,10 @@ class handler(BaseHTTPRequestHandler):
             query = self.path.split('?')[1] if '?' in self.path else ''
             params = dict(param.split('=') for param in query.split('&') if '=' in param)
             
-            date = params.get('date', datetime.now().strftime('%Y-%m-%d'))
+            # Use ET timezone for date default
+            et_tz = pytz.timezone('US/Eastern')
+            et_now = datetime.now(et_tz)
+            date = params.get('date', et_now.strftime('%Y-%m-%d'))
             force = params.get('force', 'false').lower() == 'true'
             
             result = process_daily_summary(date, force)
@@ -78,7 +82,10 @@ class handler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
             
-            date = data.get('date', datetime.now().strftime('%Y-%m-%d'))
+            # Use ET timezone for date default
+            et_tz = pytz.timezone('US/Eastern')
+            et_now = datetime.now(et_tz)
+            date = data.get('date', et_now.strftime('%Y-%m-%d'))
             force = data.get('force', False)
             
             result = process_daily_summary(date, force)
