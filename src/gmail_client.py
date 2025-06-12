@@ -44,7 +44,18 @@ class GmailClient:
         # If no valid credentials, authenticate
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                # Refresh the token
                 creds.refresh(Request())
+                
+                # Save the refreshed token back to environment or file
+                if os.getenv('VERCEL'):
+                    # In Vercel, we can't save files, so we'll use the refresh token
+                    # The refresh token doesn't expire unless revoked
+                    print("Token refreshed in Vercel environment")
+                elif not os.getenv('VERCEL') and os.path.exists('token.json'):
+                    # Save refreshed token locally
+                    with open('token.json', 'w') as token:
+                        token.write(creds.to_json())
             else:
                 # Use environment variables for credentials in production
                 credentials_json = os.getenv('GMAIL_CREDENTIALS_JSON')
