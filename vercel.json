@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/altitude_summary",
-      "schedule": "10 1 * * *"
+      "schedule": "30 1 * * *"
     }
   ]
 }
