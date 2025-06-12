@@ -29,8 +29,16 @@ class GmailClient:
         """Authenticate with Gmail API"""
         creds = None
         
-        # Check for existing token
-        if os.path.exists('token.json'):
+        # Check for token in environment variable first (for serverless)
+        token_json = os.getenv('GMAIL_TOKEN_JSON')
+        if token_json:
+            try:
+                token_data = json.loads(token_json)
+                creds = Credentials.from_authorized_user_info(token_data, self.SCOPES)
+            except json.JSONDecodeError:
+                raise ValueError("Invalid GMAIL_TOKEN_JSON format")
+        # Check for existing token file
+        elif os.path.exists('token.json'):
             creds = Credentials.from_authorized_user_file('token.json', self.SCOPES)
         
         # If no valid credentials, authenticate
@@ -51,12 +59,7 @@ class GmailClient:
                 else:
                     raise FileNotFoundError("No Gmail credentials found. Set GMAIL_CREDENTIALS_JSON or add credentials.json")
                 
-                # For serverless, we need to handle this differently
-                if os.getenv('VERCEL') or os.getenv('AWS_LAMBDA_FUNCTION_NAME'):
-                    # In serverless environment, we should use pre-generated tokens
-                    raise RuntimeError("In serverless environment, token must be pre-generated")
-                else:
-                    creds = flow.run_local_server(port=8080)
+                creds = flow.run_local_server(port=8080)
             
             # Save credentials for next run (not in serverless)
             if not (os.getenv('VERCEL') or os.getenv('AWS_LAMBDA_FUNCTION_NAME')):
