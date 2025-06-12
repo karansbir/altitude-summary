@@ -43,20 +43,65 @@ class AltitudeParser:
         """Extract activities from a single Gmail message"""
         activities = []
         
-        # Get email content (snippet or body)
-        content = message.get('snippet', '')
-        if 'payload' in message and 'body' in message['payload']:
-            body_data = message['payload']['body'].get('data', '')
+        # First, process snippet for standard activities (this usually has the main ones)
+        snippet = message.get('snippet', '')
+        snippet_activities = self._extract_from_content(snippet, "snippet")
+        activities.extend(snippet_activities)
+        
+        # Then, get full body content for additional activities
+        full_content = self._get_full_body_content(message)
+        if full_content and full_content != snippet:
+            full_activities = self._extract_from_content(full_content, "full")
+            # Only add activities not already found in snippet
+            for activity in full_activities:
+                # Check if this activity is already captured
+                existing = any(
+                    a['activity'] == activity['activity'] and 
+                    a['type'] == activity['type'] and
+                    a['time'] == activity['time']
+                    for a in activities
+                )
+                if not existing:
+                    activities.append(activity)
+        
+        return activities
+    
+    def _get_full_body_content(self, message: Dict) -> str:
+        """Extract full body content from message"""
+        if 'payload' not in message:
+            return ""
+        
+        payload = message['payload']
+        
+        # Handle multipart messages
+        if 'parts' in payload:
+            for part in payload['parts']:
+                if part.get('mimeType') == 'text/plain':
+                    body_data = part.get('body', {}).get('data', '')
+                    if body_data:
+                        import base64
+                        try:
+                            return base64.urlsafe_b64decode(body_data).decode('utf-8')
+                        except:
+                            continue
+        else:
+            # Single part message
+            body_data = payload.get('body', {}).get('data', '')
             if body_data:
                 import base64
                 try:
-                    content = base64.urlsafe_b64decode(body_data).decode('utf-8')
+                    return base64.urlsafe_b64decode(body_data).decode('utf-8')
                 except:
-                    content = message.get('snippet', '')
+                    pass
         
-        # Extract time posted
-        time_match = self.patterns['time_posted'].search(content)
-        posted_time = time_match.group(1) if time_match else "Unknown"
+        return ""
+    
+    def _extract_from_content(self, content: str, source: str) -> List[Dict]:
+        """Extract activities from content string"""
+        activities = []
+        
+        # Extract all time stamps
+        all_time_matches = list(self.patterns['time_posted'].finditer(content))
         
         # Extract all activity types
         activity_extractors = [
@@ -68,33 +113,70 @@ class AltitudeParser:
             ('PM Snack', self.patterns['pm_snack'])
         ]
         
+        # For each activity type, find matches and associate with nearest time
         for activity_type, pattern in activity_extractors:
-            matches = pattern.finditer(content)
+            matches = list(pattern.finditer(content))
             for match in matches:
+                # Find the closest preceding time
+                activity_time = self._find_closest_time(content, match.start(), all_time_matches)
                 activities.append({
-                    'time': posted_time,
+                    'time': activity_time,
                     'activity': activity_type,
                     'type': match.group(1),
                     'raw_content': match.group(0)
                 })
         
-        # Extract other activities
-        other_matches = self.patterns['activity'].finditer(content)
-        standard_activities = ['toileting', 'diaper', 'nap', 'snack', 'lunch']
-        
-        for match in other_matches:
-            activity_name = match.group(1).strip()
-            activity_type = match.group(2).strip()
+        # Extract other activities (like "Snap Frame") only from full content
+        if source == "full":
+            # Simple pattern to catch activity names followed by Kavitha (anywhere in the line)
+            lines = content.split('\n')
+            standard_activities = ['toileting', 'diaper', 'nap', 'snack', 'lunch', 'am snack', 'pm snack']
             
-            if not any(std in activity_name.lower() for std in standard_activities):
-                activities.append({
-                    'time': posted_time,
-                    'activity': activity_name,
-                    'type': activity_type,
-                    'raw_content': match.group(0)
-                })
+            for line in lines:
+                line = line.strip()
+                if 'kavitha' in line.lower() and line:
+                    # Look for activity patterns like "Activity Name" or "Activity Name:"
+                    # Remove URLs and extra whitespace
+                    clean_line = re.sub(r'\([^)]*\)', '', line)  # Remove (URLs)
+                    clean_line = re.sub(r'https?://[^\s]+', '', clean_line)  # Remove URLs
+                    clean_line = re.sub(r'\s+', ' ', clean_line).strip()  # Clean whitespace
+                    
+                    # Look for patterns like "Word Word Kavitha" or "Word Word: Something Kavitha"
+                    activity_match = re.search(r'^([A-Za-z][A-Za-z\s]+?)(?::\s*([A-Za-z\s]*?))?\s*Kavitha', clean_line, re.IGNORECASE)
+                    if activity_match:
+                        activity_name = activity_match.group(1).strip()
+                        activity_type = activity_match.group(2).strip() if activity_match.group(2) else ""
+                        
+                        # Skip if it's a standard activity we already processed
+                        if not any(std in activity_name.lower() for std in standard_activities):
+                            # Find closest time in the original content
+                            line_pos = content.find(line)
+                            activity_time = self._find_closest_time(content, line_pos, all_time_matches)
+                            activities.append({
+                                'time': activity_time,
+                                'activity': activity_name,
+                                'type': activity_type,
+                                'raw_content': clean_line
+                            })
         
         return activities
+    
+    def _find_closest_time(self, content: str, activity_position: int, time_matches: List) -> str:
+        """Find the closest time for an activity (either before or after)"""
+        if not time_matches:
+            return "Unknown"
+        
+        # Find the closest time - could be before or after the activity
+        closest_time = "Unknown"
+        min_distance = float('inf')
+        
+        for time_match in time_matches:
+            distance = abs(time_match.start() - activity_position)
+            if distance < min_distance:
+                min_distance = distance
+                closest_time = time_match.group(1)
+        
+        return closest_time
     
     def generate_daily_summary(self, activities: List[Dict], date_str: str) -> Dict[str, Any]:
         """Generate daily summary from activities"""
@@ -159,7 +241,7 @@ class AltitudeParser:
                 elif activity['type'].lower() == 'stop':
                     nap_end = activity['time']
         
-        if nap_start and nap_end:
+        if nap_start and nap_end and nap_start != "Unknown" and nap_end != "Unknown":
             return self.parse_time_duration(nap_start, nap_end)
         
         return 0
