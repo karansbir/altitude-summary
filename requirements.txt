@@ -8,3 +8,4 @@ python-dotenv==1.0.0
 twilio==8.10.0
 pytz==2023.3
 supabase==2.15.3
+protobuf>=4.25.8 # not directly required, pinned by Snyk to avoid a vulnerability
