@@ -107,22 +107,38 @@ def process_daily_summary(date_str: str, force: bool = False) -> dict:
     Main function to process daily summary
     """
     try:
-        # Initialize services
+        # Initialize services - use database by default
         gmail = GmailClient()
-        parser = AltitudeParser()
+        parser = AltitudeParser(use_database=True)
         notifier = NotificationService()
         
         # Fetch Gmail messages for the date
         messages = gmail.get_altitude_messages(date_str)
         
         if not messages:
+            # Even if no new messages, try to generate summary from database
+            try:
+                daily_summary = parser.db_client.generate_daily_summary_from_db(date_str)
+                if daily_summary['raw_activities']:
+                    # We have data in database, use it
+                    notification_result = notifier.send_summary(daily_summary)
+                    return {
+                        'status': 'success',
+                        'message': f'Daily summary generated from database for {date_str}',
+                        'date': date_str,
+                        'summary': daily_summary,
+                        'notifications': notification_result
+                    }
+            except:
+                pass
+            
             return {
                 'status': 'no_data',
                 'message': f'No Altitude messages found for {date_str}',
                 'date': date_str
             }
         
-        # Parse messages and generate summary
+        # Parse messages and generate summary (will store in database)
         daily_summary = parser.process_messages(messages, date_str)
         
         # Send notifications

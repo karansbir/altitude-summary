@@ -6,12 +6,19 @@ Processes Gmail messages to generate daily summaries
 
 import re
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
+try:
+    from .database_client import DatabaseClient
+except ImportError:
+    from database_client import DatabaseClient
 
 class AltitudeParser:
     """Parse Altitude emails and generate daily summaries"""
     
-    def __init__(self):
+    def __init__(self, use_database: bool = False):
+        self.use_database = use_database
+        self.db_client = DatabaseClient() if use_database else None
         self.patterns = {
             'toileting': re.compile(r'Toileting:\s*(Wet|Dry|BM)', re.IGNORECASE),
             'diaper': re.compile(r'Diaper:\s*(Wet|Dry|BM|Wet \+ BM)', re.IGNORECASE),
@@ -25,6 +32,37 @@ class AltitudeParser:
     
     def process_messages(self, messages: List[Dict], date_str: str) -> Dict[str, Any]:
         """Process Gmail messages and generate daily summary"""
+        if self.use_database:
+            return self.process_messages_with_database(messages, date_str)
+        else:
+            return self.process_messages_legacy(messages, date_str)
+    
+    def process_messages_with_database(self, messages: List[Dict], date_str: str) -> Dict[str, Any]:
+        """Process messages and store activities in database"""
+        # Process each message and store in database
+        for message in messages:
+            message_id = message.get('id', '')
+            
+            # Check if message already processed
+            if self.db_client.check_message_processed(message_id):
+                continue
+            
+            # Extract activities from message
+            activities = self.extract_activities_from_message(message)
+            
+            # Add date to each activity
+            for activity in activities:
+                activity['date'] = date_str
+            
+            # Store activities in database
+            if activities:
+                self.db_client.insert_activities(activities, message_id)
+        
+        # Generate summary from database
+        return self.db_client.generate_daily_summary_from_db(date_str)
+    
+    def process_messages_legacy(self, messages: List[Dict], date_str: str) -> Dict[str, Any]:
+        """Legacy processing without database (original implementation)"""
         all_activities = []
         
         # Extract activities from each message
