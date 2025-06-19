@@ -164,40 +164,49 @@ class AltitudeParser:
                     'raw_content': match.group(0)
                 })
         
-        # Extract other activities (like "Snap Frame") only from full content
+        # IMPROVED: Extract educational activities from full content
         if source == "full":
-            # Simple pattern to catch activity names followed by Kavitha (anywhere in the line)
-            lines = content.split('\n')
-            standard_activities = ['toileting', 'diaper', 'nap', 'snack', 'lunch', 'am snack', 'pm snack']
-            
-            for line in lines:
-                line = line.strip()
-                if 'kavitha' in line.lower() and line:
-                    # Look for activity patterns like "Activity Name" or "Activity Name:"
-                    # Remove URLs and extra whitespace
-                    clean_line = re.sub(r'\([^)]*\)', '', line)  # Remove (URLs)
-                    clean_line = re.sub(r'https?://[^\s]+', '', clean_line)  # Remove URLs
-                    clean_line = re.sub(r'\s+', ' ', clean_line).strip()  # Clean whitespace
-                    
-                    # Look for patterns like "Word Word Kavitha" or "Word Word: Something Kavitha"
-                    activity_match = re.search(r'^([A-Za-z][A-Za-z\s]+?)(?::\s*([A-Za-z\s]*?))?\s*Kavitha', clean_line, re.IGNORECASE)
-                    if activity_match:
-                        activity_name = activity_match.group(1).strip()
-                        activity_type = activity_match.group(2).strip() if activity_match.group(2) else ""
-                        
-                        # Skip if it's a standard activity we already processed
-                        if not any(std in activity_name.lower() for std in standard_activities):
-                            # Find closest time in the original content
-                            line_pos = content.find(line)
-                            activity_time = self._find_closest_time(content, line_pos, all_time_matches)
-                            activities.append({
-                                'time': activity_time,
-                                'activity': activity_name,
-                                'type': activity_type,
-                                'raw_content': clean_line
-                            })
+            self._extract_educational_activities(content, activities, all_time_matches)
         
         return activities
+    
+    def _extract_educational_activities(self, content: str, activities: List[Dict], all_time_matches: List):
+        """Extract educational activities like Clay, Art, etc."""
+        
+        # Look for specific educational keywords
+        educational_keywords = ['clay', 'art', 'paint', 'book', 'story', 'music', 'dance', 'game', 'play', 'puzzle', 'craft', 'draw', 'color', 'sing']
+        
+        lines = content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Look for educational keywords at the start of lines
+            for keyword in educational_keywords:
+                # Pattern: "Clay" or "Clay Kavitha" or "Clay - posted"
+                pattern = rf'\b{keyword}\b'
+                if re.search(pattern, line, re.IGNORECASE):
+                    # Check if this is really an activity (not just part of a sentence)
+                    if (line.lower().startswith(keyword.lower()) or 
+                        f' {keyword.lower()} ' in line.lower() or
+                        f'{keyword.lower()} ' in line.lower()):
+                        
+                        # Find the closest time
+                        line_pos = content.find(line)
+                        activity_time = self._find_closest_time(content, line_pos, all_time_matches)
+                        
+                        activity_data = {
+                            'time': activity_time,
+                            'activity': keyword.title(),  # Capitalize first letter
+                            'type': '',
+                            'raw_content': line
+                        }
+                        
+                        # Avoid duplicates
+                        if not any(a['activity'].lower() == keyword.lower() for a in activities):
+                            activities.append(activity_data)
+                            break  # Only add once per line
     
     def _find_closest_time(self, content: str, activity_position: int, time_matches: List) -> str:
         """Find the closest time for an activity (either before or after)"""
