@@ -455,7 +455,8 @@ class DashboardQueries:
         
         for activity in activities:
             activity_name = activity.get('activity_name', '').lower()
-            subtype = activity.get('activity_subtype', '').title()
+            subtype = activity.get('activity_subtype') or ''
+            subtype = subtype.title() if subtype else 'None'
             
             if 'am snack' in activity_name:
                 meals['am_snack'] = subtype
