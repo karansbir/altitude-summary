@@ -74,6 +74,11 @@ class DatabaseClient:
                  .execute())
         return result.data
     
+    def get_all_activities(self) -> List[Dict]:
+        """Get all activities from the database"""
+        result = self.client.table('activities').select("*").order('timestamp').execute()
+        return result.data
+    
     def generate_daily_summary_from_db(self, date_str: str) -> Dict[str, Any]:
         """Generate daily summary from database activities"""
         activities = self.get_daily_activities(date_str)

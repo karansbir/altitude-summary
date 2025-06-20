@@ -49,10 +49,25 @@ class DashboardQueries:
             elif activity_type == 'other':
                 daily_stats[activity_date]['other_activities'] += 1
         
+        # Create daily breakdown for the dashboard
+        daily_breakdown = []
+        for date_str, stats in daily_stats.items():
+            daily_breakdown.append({
+                'date': date_str,
+                'total_activities': sum(stats.values()),
+                'toileting_count': stats['toileting'],
+                'diaper_count': stats['diaper'],
+                'nap_duration': 0  # Would need more complex calculation for actual nap duration per day
+            })
+        
+        # Sort by date
+        daily_breakdown.sort(key=lambda x: x['date'])
+        
         return {
             'start_date': start_date,
             'end_date': end_date,
             'daily_stats': daily_stats,
+            'daily_breakdown': daily_breakdown,
             'averages': self._calculate_weekly_averages(daily_stats)
         }
     
@@ -74,7 +89,15 @@ class DashboardQueries:
             for key in totals:
                 totals[key] += day_stats.get(key, 0)
         
-        return {key: round(total / num_days, 1) for key, total in totals.items()}
+        averages = {key: round(total / num_days, 1) for key, total in totals.items()}
+        
+        # Add dashboard-friendly keys
+        averages['toileting_per_day'] = averages['toileting']
+        averages['diaper_per_day'] = averages['diaper']
+        averages['activities_per_day'] = sum(averages.values())
+        averages['nap_duration_minutes'] = 0  # Would need actual nap duration calculation
+        
+        return averages
     
     def get_nap_analysis(self, start_date: str, end_date: str) -> Dict[str, Any]:
         """Analyze nap patterns"""
@@ -160,19 +183,24 @@ class DashboardQueries:
         """Get chronological timeline of activities for a specific date"""
         activities = self.db_client.get_daily_activities(target_date)
         
-        # Convert to timeline format
+        # Convert to timeline format - keep original field names for HTML generation
         timeline = []
         for activity in activities:
             timeline.append({
+                'parsed_time': activity.get('parsed_time', 'Unknown'),
+                'activity_name': activity.get('activity_name', ''),
+                'activity_subtype': activity.get('activity_subtype', ''),
+                'activity_type': activity.get('activity_type', ''),
+                'timestamp': activity.get('timestamp', ''),
+                # Also keep legacy format for backward compatibility
                 'time': activity.get('parsed_time', 'Unknown'),
                 'activity': activity.get('activity_name', ''),
                 'type': activity.get('activity_subtype', ''),
-                'category': activity.get('activity_type', ''),
-                'timestamp': activity.get('timestamp', '')
+                'category': activity.get('activity_type', '')
             })
         
         # Sort by parsed time
-        timeline.sort(key=lambda x: self._time_to_minutes(x['time']) if x['time'] != 'Unknown' else 0)
+        timeline.sort(key=lambda x: self._time_to_minutes(x['parsed_time']) if x['parsed_time'] != 'Unknown' else 0)
         
         return timeline
     
@@ -280,3 +308,172 @@ class DashboardQueries:
             return hours * 60 + minutes
         except:
             return 0
+    
+    def get_daily_summary(self, target_date: str) -> Dict[str, Any]:
+        """Get comprehensive daily summary like the original format"""
+        activities = self.db_client.get_daily_activities(target_date)
+        
+        # Count toileting and diaper activities
+        toileting_counts = self._count_by_type(activities, 'toileting')
+        diaper_counts = self._count_by_type(activities, 'diaper')
+        
+        # Calculate nap duration
+        nap_duration = self._calculate_daily_nap_duration(activities)
+        
+        # Get meal status
+        meal_status = self._get_daily_meal_status(activities)
+        
+        # Get other activities
+        other_activities = self._get_daily_other_activities(activities)
+        
+        return {
+            'date': target_date,
+            'toileting_counts': toileting_counts,
+            'diaper_counts': diaper_counts,
+            'nap_duration_minutes': nap_duration,
+            'meals': meal_status,
+            'other_activities': other_activities,
+            'total_activities': len(activities)
+        }
+    
+    def get_lifetime_summary(self) -> Dict[str, Any]:
+        """Get lifetime statistics across all data"""
+        # Get all activities
+        activities = self.db_client.get_all_activities()
+        
+        if not activities:
+            return {
+                'total_toileting': 0,
+                'total_diapers': 0,
+                'total_naps': 0,
+                'total_activities': 0,
+                'days_tracked': 0,
+                'unique_other_activities': 0,
+                'first_activity_date': 'N/A',
+                'last_activity_date': 'N/A',
+                'avg_nap_duration': 0
+            }
+        
+        # Calculate totals by type
+        type_counts = {}
+        dates_seen = set()
+        other_activities = set()
+        nap_durations = []
+        
+        for activity in activities:
+            activity_type = activity['activity_type']
+            type_counts[activity_type] = type_counts.get(activity_type, 0) + 1
+            dates_seen.add(activity['date'])
+            
+            if activity_type == 'other':
+                other_activities.add(activity.get('activity_name', ''))
+        
+        # Calculate nap durations from all nap start/stop pairs
+        nap_activities = [a for a in activities if a['activity_type'] == 'nap']
+        daily_naps = {}
+        
+        for activity in nap_activities:
+            activity_date = activity['date']
+            if activity_date not in daily_naps:
+                daily_naps[activity_date] = {'starts': [], 'stops': []}
+            
+            if activity.get('activity_subtype') == 'start':
+                daily_naps[activity_date]['starts'].append(activity['parsed_time'])
+            elif activity.get('activity_subtype') == 'stop':
+                daily_naps[activity_date]['stops'].append(activity['parsed_time'])
+        
+        for date_naps in daily_naps.values():
+            starts = date_naps['starts']
+            stops = date_naps['stops']
+            for i in range(min(len(starts), len(stops))):
+                duration = self._parse_time_duration(starts[i], stops[i])
+                if duration > 0:
+                    nap_durations.append(duration)
+        
+        # Get date range
+        activity_dates = [activity['date'] for activity in activities]
+        first_date = min(activity_dates) if activity_dates else 'N/A'
+        last_date = max(activity_dates) if activity_dates else 'N/A'
+        
+        return {
+            'total_toileting': type_counts.get('toileting', 0),
+            'total_diapers': type_counts.get('diaper', 0),
+            'total_naps': len(nap_durations),
+            'total_activities': len(activities),
+            'days_tracked': len(dates_seen),
+            'unique_other_activities': len(other_activities),
+            'first_activity_date': first_date,
+            'last_activity_date': last_date,
+            'avg_nap_duration': sum(nap_durations) / len(nap_durations) if nap_durations else 0
+        }
+    
+    def _count_by_type(self, activities: List[Dict], activity_type: str) -> Dict[str, int]:
+        """Count activities by subtype (wet, dry, bm)"""
+        filtered = [a for a in activities if a.get('activity_type') == activity_type]
+        
+        counts = {'wet': 0, 'dry': 0, 'bm': 0}
+        
+        for activity in filtered:
+            subtype = activity.get('activity_subtype', '').lower()
+            if 'wet' in subtype:
+                counts['wet'] += 1
+            if 'dry' in subtype:
+                counts['dry'] += 1
+            if 'bm' in subtype:
+                counts['bm'] += 1
+        
+        return counts
+    
+    def _calculate_daily_nap_duration(self, activities: List[Dict]) -> int:
+        """Calculate nap duration in minutes for a single day"""
+        nap_activities = [a for a in activities if a['activity_type'] == 'nap']
+        
+        starts = []
+        stops = []
+        
+        for activity in nap_activities:
+            if activity.get('activity_subtype') == 'start':
+                starts.append(activity['parsed_time'])
+            elif activity.get('activity_subtype') == 'stop':
+                stops.append(activity['parsed_time'])
+        
+        # Calculate duration from first start to first stop
+        if starts and stops:
+            return self._parse_time_duration(starts[0], stops[0])
+        
+        return 0
+    
+    def _get_daily_meal_status(self, activities: List[Dict]) -> Dict[str, str]:
+        """Get meal status for the day"""
+        meal_activities = [a for a in activities if a['activity_type'] == 'meal']
+        
+        meals = {
+            'am_snack': 'None',
+            'lunch': 'None',
+            'pm_snack': 'None'
+        }
+        
+        for activity in activities:
+            activity_name = activity.get('activity_name', '').lower()
+            subtype = activity.get('activity_subtype', '').title()
+            
+            if 'am snack' in activity_name:
+                meals['am_snack'] = subtype
+            elif 'lunch' in activity_name:
+                meals['lunch'] = subtype
+            elif 'pm snack' in activity_name:
+                meals['pm_snack'] = subtype
+        
+        return meals
+    
+    def _get_daily_other_activities(self, activities: List[Dict]) -> List[str]:
+        """Get list of other activities for the day"""
+        other_activities = []
+        
+        for activity in activities:
+            if activity.get('activity_type') == 'other':
+                activity_name = activity.get('activity_name', '')
+                if activity_name and activity_name not in other_activities:
+                    other_activities.append(activity_name)
+        
+        return other_activities

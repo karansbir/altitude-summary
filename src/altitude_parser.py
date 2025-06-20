@@ -21,7 +21,7 @@ class AltitudeParser:
         self.db_client = DatabaseClient() if use_database else None
         self.patterns = {
             'toileting': re.compile(r'Toileting:\s*(Wet|Dry|BM)', re.IGNORECASE),
-            'diaper': re.compile(r'Diaper:\s*(Wet|Dry|BM|Wet \+ BM)', re.IGNORECASE),
+            'diaper': re.compile(r'Diaper:\s*(Wet \+ BM|Wet|Dry|BM)', re.IGNORECASE),
             'nap': re.compile(r'Nap:\s*(Start|Stop)', re.IGNORECASE),
             'am_snack': re.compile(r'AM Snack:\s*(All|Some|None)', re.IGNORECASE),
             'lunch': re.compile(r'Lunch:\s*(All|Some|None)', re.IGNORECASE),
@@ -171,10 +171,50 @@ class AltitudeParser:
         return activities
     
     def _extract_educational_activities(self, content: str, activities: List[Dict], all_time_matches: List):
-        """Extract educational activities like Clay, Art, etc."""
+        """Extract educational activities using systematic pattern detection"""
         
-        # Look for specific educational keywords
-        educational_keywords = ['clay', 'art', 'paint', 'book', 'story', 'music', 'dance', 'game', 'play', 'puzzle', 'craft', 'draw', 'color', 'sing']
+        # IMPROVED: Format-based pattern using sendgrid URL as anchor
+        # Pattern: "Activity Name ( https://u2081083.ct.sendgrid..." followed by "Kavitha Baradol - posted [TIME]"
+        # This catches educational activities while filtering out generic URLs
+        educational_pattern = re.compile(
+            r'([^*\n]{1,50})\s*\(\s*https://u2081083\.ct\.sendgrid.*?Kavitha\s+Baradol\s*-\s*posted\s+(\d{1,2}:\d{2}\s+[AP]M)',
+            re.MULTILINE | re.IGNORECASE | re.DOTALL
+        )
+        
+        matches = educational_pattern.finditer(content)
+        for match in matches:
+            activity_name = match.group(1).strip()
+            activity_time = match.group(2).strip()
+            
+            # Clean up activity name - remove extra whitespace and newlines
+            activity_name = ' '.join(activity_name.split())
+            
+            # Skip activities with colons (these are standard activities with values like "Lunch: All")
+            if ':' in activity_name:
+                continue
+            
+            # Skip if this looks like a standard activity
+            standard_activities = ['toileting', 'diaper', 'nap', 'am snack', 'lunch', 'pm snack']
+            if any(std.lower() in activity_name.lower() for std in standard_activities):
+                continue
+            
+            # Skip if activity name is too generic or short
+            if len(activity_name) < 3 or activity_name.lower() in ['all', 'some', 'none', 'wet', 'dry', 'bm', 'start', 'stop']:
+                continue
+            
+            activity_data = {
+                'time': activity_time,
+                'activity': activity_name,
+                'type': '',
+                'raw_content': match.group(0)
+            }
+            
+            # Avoid duplicates
+            if not any(a['activity'].lower() == activity_name.lower() and a['time'] == activity_time for a in activities):
+                activities.append(activity_data)
+        
+        # FALLBACK: Keep the old keyword-based approach for activities not caught by the new pattern
+        educational_keywords = ['clay', 'art', 'paint', 'book', 'story', 'music', 'dance', 'game', 'play', 'puzzle', 'craft', 'draw', 'color', 'sing', 'cut', 'scissor', 'sea', 'animals', 'snap', 'frame', 'water', 'plant', 'sponge']
         
         lines = content.split('\n')
         for line in lines:

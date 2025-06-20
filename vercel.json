@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/altitude_summary",
-      "schedule": "0 20 * * 1-5"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/altitude_summary",
-      "schedule": "47 22 18 6 *"
+      "schedule": "0 20 * * *"
     }
   ]
 }
