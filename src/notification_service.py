@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Notification Service using Brevo (Email) and Twilio (SMS)
-Handles email and SMS notifications for daily summaries
+Notification Service using Brevo (Email)
+Handles email notifications for daily summaries
 """
 
 import os
@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 class NotificationService:
-    """Service for sending email via Brevo and SMS via Twilio"""
+    """Service for sending email via Brevo"""
     
     def __init__(self):
         # Brevo configuration (for email)
@@ -19,15 +19,8 @@ class NotificationService:
         self.from_email = os.getenv('FROM_EMAIL', 'noreply@altitude-summary.com')
         self.from_name = os.getenv('FROM_NAME', 'Altitude Summary')
         
-        # Twilio configuration (for SMS/WhatsApp)
-        self.twilio_account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-        self.twilio_auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-        self.twilio_phone_number = os.getenv('TWILIO_PHONE_NUMBER')
-        self.twilio_whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
-        
         # Recipients
         self.recipient_email = os.getenv('RECIPIENT_EMAIL')
-        self.recipient_phone = os.getenv('RECIPIENT_PHONE')
         
         # Brevo setup
         self.brevo_base_url = 'https://api.brevo.com/v3'
@@ -37,29 +30,17 @@ class NotificationService:
             'content-type': 'application/json'
         }
         
-        # Initialize Twilio client if configured
-        self.twilio_client = None
-        if self.twilio_account_sid and self.twilio_auth_token:
-            try:
-                from twilio.rest import Client
-                self.twilio_client = Client(self.twilio_account_sid, self.twilio_auth_token)
-            except ImportError:
-                print("Warning: Twilio library not installed. Run: pip install twilio")
-        
         # Validate configuration
         if not self.brevo_api_key:
             print("Warning: BREVO_API_KEY not set")
         if not self.recipient_email:
             print("Warning: RECIPIENT_EMAIL not set")
-        if not self.twilio_account_sid:
-            print("Warning: TWILIO_ACCOUNT_SID not set (SMS disabled)")
             
     def test_connection(self) -> Dict[str, Any]:
-        """Test Brevo API and Twilio connections"""
+        """Test Brevo API connection"""
         results = {
             'status': 'failed',
-            'brevo': None,
-            'twilio': None
+            'brevo': None
         }
         
         # Test Brevo
@@ -67,16 +48,10 @@ class NotificationService:
             results['brevo'] = self._test_brevo_connection()
         else:
             results['brevo'] = {'status': 'failed', 'error': 'BREVO_API_KEY not configured'}
-            
-        # Test Twilio
-        if self.twilio_client:
-            results['twilio'] = self._test_twilio_connection()
-        else:
-            results['twilio'] = {'status': 'failed', 'error': 'Twilio not configured'}
         
         # Overall status
-        if results['brevo'].get('status') == 'success' or results['twilio'].get('status') == 'success':
-            results['status'] = 'partial' if results['brevo'].get('status') != results['twilio'].get('status') else 'success'
+        if results['brevo'].get('status') == 'success':
+            results['status'] = 'success'
         
         return results
     
@@ -132,45 +107,11 @@ class NotificationService:
                 'error': str(e)
             }
     
-    def _test_twilio_connection(self) -> Dict[str, Any]:
-        """Test Twilio connection"""
-        try:
-            # Get account info
-            account = self.twilio_client.api.accounts(self.twilio_account_sid).fetch()
-            
-            # Check if phone number is valid
-            phone_numbers = self.twilio_client.incoming_phone_numbers.list(
-                phone_number=self.twilio_phone_number,
-                limit=1
-            )
-            
-            if not phone_numbers:
-                return {
-                    'status': 'failed',
-                    'error': f"Phone number {self.twilio_phone_number} not found in your Twilio account"
-                }
-            
-            return {
-                'status': 'success',
-                'message': 'Twilio connected successfully',
-                'account_info': {
-                    'friendly_name': account.friendly_name,
-                    'status': account.status,
-                    'phone_number': self.twilio_phone_number
-                }
-            }
-        except Exception as e:
-            return {
-                'status': 'failed',
-                'error': str(e)
-            }
-    
     def send_summary(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send daily summary via email and SMS"""
+        """Send daily summary via email"""
         results = {
             'status': 'failed',
-            'email_sent': False,
-            'sms_sent': False
+            'email_sent': False
         }
         
         try:
@@ -186,27 +127,12 @@ class NotificationService:
                 if not email_result.get('success'):
                     results['email_error'] = email_result.get('error')
             
-            # Send SMS/WhatsApp via Twilio
-            if self.recipient_phone and self.twilio_client:
-                # Try WhatsApp first (no A2P restrictions), then SMS
-                sms_result = self._send_whatsapp_twilio(summary_data)
-                if not sms_result.get('success'):
-                    # Fallback to SMS if WhatsApp fails
-                    sms_result = self._send_sms_twilio(summary_data)
-                
-                results['sms_sent'] = sms_result.get('success', False)
-                if not sms_result.get('success'):
-                    results['sms_error'] = sms_result.get('error')
-            
             # Determine overall status
-            if results['email_sent'] and results['sms_sent']:
+            if results['email_sent']:
                 results['status'] = 'success'
-            elif results['email_sent'] or results['sms_sent']:
-                results['status'] = 'partial'
-                results['error'] = 'Some notifications failed to send'
             else:
                 results['status'] = 'failed'
-                results['error'] = 'All notifications failed'
+                results['error'] = 'Email notification failed'
                 
         except Exception as e:
             results['status'] = 'failed'
@@ -245,51 +171,6 @@ class NotificationService:
             else:
                 return {'success': False, 'error': f"Email API error: {response.text}"}
                 
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
-    def _send_whatsapp_twilio(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send WhatsApp message via Twilio"""
-        try:
-            sms_text = self._format_sms_content(summary_data)
-            
-            # Format recipient phone for WhatsApp
-            whatsapp_to = f"whatsapp:{self.recipient_phone}"
-            
-            message = self.twilio_client.messages.create(
-                body=sms_text,
-                from_=self.twilio_whatsapp_number,
-                to=whatsapp_to
-            )
-            
-            return {
-                'success': True,
-                'message_sid': message.sid,
-                'status': message.status,
-                'method': 'whatsapp'
-            }
-            
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-
-    def _send_sms_twilio(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send SMS via Twilio"""
-        try:
-            sms_text = self._format_sms_content(summary_data)
-            
-            message = self.twilio_client.messages.create(
-                body=sms_text,
-                from_=self.twilio_phone_number,
-                to=self.recipient_phone
-            )
-            
-            return {
-                'success': True,
-                'message_sid': message.sid,
-                'status': message.status,
-                'method': 'sms'
-            }
-            
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -453,32 +334,3 @@ class NotificationService:
         </body>
         </html>
         """
-    
-    def _format_sms_content(self, summary_data: Dict[str, Any]) -> str:
-        """Format compact SMS content (160 char consideration)"""
-        s = summary_data['summary']
-        
-        # Format nap time
-        nap_mins = s['nap_duration_minutes']
-        nap_h = nap_mins // 60
-        nap_m = nap_mins % 60
-        nap_str = f"{nap_h}h{nap_m}m" if nap_h > 0 else f"{nap_mins}m"
-        
-        # Shorten meal values
-        meals = s['meals']
-        meal_str = f"A:{meals['am_snack'][0]} L:{meals['lunch'][0]} P:{meals['pm_snack'][0]}"
-        
-        # Format activities (first 2 only for space)
-        activities = s['other_activities'][:2] if s['other_activities'] else []
-        act_str = ', '.join([a.split(':')[0] for a in activities]) if activities else 'None'
-        
-        # Build SMS (keeping under 160 chars)
-        sms = f"""📊 Altitude Summary - {summary_data['formatted_date']}
-
-🚽 Toileting: W:{s['toiletings']['wet']} D:{s['toiletings']['dry']} BM:{s['toiletings']['bm']}
-👶 Diapers: W:{s['diapers']['wet']} D:{s['diapers']['dry']} BM:{s['diapers']['bm']}
-😴 Nap: {nap_str}
-🍽️ Meals: {meal_str}
-🎨 Activities: {act_str}"""
-        
-        return sms
