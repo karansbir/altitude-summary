@@ -477,3 +477,15 @@ class DashboardQueries:
                     other_activities.append(activity_name)
         
         return other_activities
+    
+    def get_available_dates(self) -> List[str]:
+        """Get all dates that have at least one activity"""
+        try:
+            # Query for distinct dates that have activities
+            activities = self.db_client.get_all_activities()
+            dates = list(set([activity['date'] for activity in activities if activity.get('date')]))
+            dates.sort(reverse=True)  # Most recent first
+            return dates
+        except Exception as e:
+            print(f"Error getting available dates: {e}")
+            return []

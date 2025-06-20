@@ -74,6 +74,8 @@ class handler(BaseHTTPRequestHandler):
                 result = self._handle_monthly_summary(dashboard, query_params)
             elif endpoint == 'search':
                 result = self._handle_search(dashboard, query_params)
+            elif endpoint == 'available-dates':
+                result = self._handle_available_dates(dashboard, query_params)
             else:
                 result = self._handle_default_dashboard(dashboard, query_params)
             
@@ -148,6 +150,14 @@ class handler(BaseHTTPRequestHandler):
             'total_matches': len(results)
         }
     
+    def _handle_available_dates(self, dashboard: DashboardQueries, params: dict) -> dict:
+        """Handle available dates request"""
+        dates = dashboard.get_available_dates()
+        return {
+            'available_dates': dates,
+            'total_dates': len(dates)
+        }
+
     def _handle_default_dashboard(self, dashboard: DashboardQueries, params: dict) -> dict:
         """Handle default dashboard request with summary data"""
         # Get recent data for overview
@@ -187,16 +197,27 @@ class handler(BaseHTTPRequestHandler):
     
     def _generate_dashboard_html(self, dashboard: DashboardQueries) -> str:
         """Generate comprehensive HTML dashboard"""
-        # Get current data
-        today = datetime.now().strftime('%Y-%m-%d')
-        week_start = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        # Get URL parameters
+        from urllib.parse import urlparse, parse_qs
+        parsed_url = urlparse(self.path)
+        query_params = parse_qs(parsed_url.query)
         
-        # Get today's data
-        today_timeline = dashboard.get_activity_timeline(today)
-        today_summary = dashboard.get_daily_summary(today)
+        # Get selected date from query parameter, default to today
+        selected_date = self._get_param(query_params, 'date', datetime.now().strftime('%Y-%m-%d'))
+        
+        # Validate that the selected date has data
+        available_dates = dashboard.get_available_dates()
+        if selected_date not in available_dates and available_dates:
+            selected_date = available_dates[0]  # Use most recent date with data
+        
+        week_start = (datetime.strptime(selected_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d')
+        
+        # Get data for selected date
+        today_timeline = dashboard.get_activity_timeline(selected_date)
+        today_summary = dashboard.get_daily_summary(selected_date)
         
         # Get week data
-        weekly_trends = dashboard.get_weekly_trends(week_start, today)
+        weekly_trends = dashboard.get_weekly_trends(week_start, selected_date)
         
         # Get lifetime data (all time)
         lifetime_summary = dashboard.get_lifetime_summary()
@@ -229,9 +250,37 @@ class handler(BaseHTTPRequestHandler):
         h1 {{
             color: white;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
             font-size: 2.5rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }}
+        
+        .date-picker-container {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        
+        .date-picker {{
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 1rem;
+            color: #2c3e50;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }}
+        
+        .date-picker:focus {{
+            border-color: #5a6fd8;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }}
+        
+        .date-picker-label {{
+            color: white;
+            font-size: 1rem;
+            margin-right: 10px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
         }}
         
         .dashboard-section {{
@@ -408,9 +457,17 @@ class handler(BaseHTTPRequestHandler):
     <div class="container">
         <h1>Altitude Summary Dashboard</h1>
         
+        <!-- Date Picker -->
+        <div class="date-picker-container">
+            <label class="date-picker-label" for="datePicker">Select Date:</label>
+            <select id="datePicker" class="date-picker" onchange="changeDate()">
+                {self._generate_date_options(available_dates, selected_date)}
+            </select>
+        </div>
+        
         <!-- Today's Summary -->
         <div class="dashboard-section">
-            <h2 class="section-title">Today's Summary - {datetime.now().strftime('%A, %B %d, %Y')}</h2>
+            <h2 class="section-title">Summary for {datetime.strptime(selected_date, '%Y-%m-%d').strftime('%A, %B %d, %Y')}</h2>
             
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -554,6 +611,18 @@ class handler(BaseHTTPRequestHandler):
             <button class="refresh-btn" onclick="window.location.reload()">Refresh Dashboard</button>
         </div>
     </div>
+    
+    <script>
+        function changeDate() {{
+            const datePicker = document.getElementById('datePicker');
+            const selectedDate = datePicker.value;
+            
+            // Reload page with new date parameter
+            const url = new URL(window.location);
+            url.searchParams.set('date', selectedDate);
+            window.location.href = url.toString();
+        }}
+    </script>
 </body>
 </html>"""
     
@@ -625,6 +694,29 @@ class handler(BaseHTTPRequestHandler):
             ''')
         
         return ''.join(html)
+    
+    def _generate_date_options(self, available_dates: list, selected_date: str) -> str:
+        """Generate HTML options for date picker"""
+        if not available_dates:
+            return '<option value="">No dates available</option>'
+        
+        options = []
+        for date in available_dates:
+            try:
+                # Format date for display
+                date_obj = datetime.strptime(date, '%Y-%m-%d')
+                display_date = date_obj.strftime('%A, %B %d, %Y')
+                
+                # Mark as selected if this is the current date
+                selected = 'selected' if date == selected_date else ''
+                
+                options.append(f'<option value="{date}" {selected}>{display_date}</option>')
+            except:
+                # Fallback for invalid dates
+                selected = 'selected' if date == selected_date else ''
+                options.append(f'<option value="{date}" {selected}>{date}</option>')
+        
+        return '\n'.join(options)
 
 # For local testing
 if __name__ == "__main__":
