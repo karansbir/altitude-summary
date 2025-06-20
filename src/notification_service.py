@@ -178,6 +178,9 @@ class NotificationService:
         """Format HTML email with modern design"""
         summary = summary_data['summary']
         
+        # Get dashboard URL with date parameter
+        dashboard_url = self._get_dashboard_url(summary_data.get('date'))
+        
         # Format nap duration
         nap_mins = summary['nap_duration_minutes']
         nap_hours = nap_mins // 60
@@ -209,8 +212,10 @@ class NotificationService:
                             <!-- Header -->
                             <tr>
                                 <td style="background-color: #4A90E2; color: #ffffff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                                    <h1 style="margin: 0; font-size: 22px; font-weight: 600;">📊 Daily Altitude Summary</h1>
-                                    <p style="margin: 8px 0 0 0; font-size: 15px; opacity: 0.9;">{summary_data['formatted_date']}</p>
+                                    <a href="{dashboard_url}" style="text-decoration: none; color: inherit; display: block;">
+                                        <h1 style="margin: 0; font-size: 22px; font-weight: 600; color: #ffffff;">📊 Daily Altitude Summary</h1>
+                                        <p style="margin: 8px 0 0 0; font-size: 15px; opacity: 0.9; color: #ffffff;">{summary_data['formatted_date']}</p>
+                                    </a>
                                 </td>
                             </tr>
                             
@@ -334,3 +339,21 @@ class NotificationService:
         </body>
         </html>
         """
+    
+    def _get_dashboard_url(self, date: str) -> str:
+        """Get dashboard URL with date parameter"""
+        # Use your actual Vercel domain
+        base_url = (
+            os.getenv('DASHBOARD_URL') or  # Custom env var for dashboard URL
+            'https://altitude-summary.vercel.app'  # Your actual Vercel domain
+        )
+        
+        # Ensure base_url has https:// prefix
+        if not base_url.startswith('http'):
+            base_url = f"https://{base_url}"
+        
+        # Add date parameter to dashboard URL
+        if date:
+            return f"{base_url}/api/dashboard?date={date}"
+        else:
+            return f"{base_url}/api/dashboard"
